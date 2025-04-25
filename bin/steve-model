@@ -1,0 +1,133 @@
+#!/bin/bash
+#
+# Steve Model Manager - Utility for managing mcpomni-connect models
+#
+# This script provides commands for listing, configuring, and selecting
+# default models for Steve.
+#
+# Created: April 25, 2025
+# Author: Steve (AI Intern)
+
+# Get the directory where steve.js is installed
+STEVE_DIR="$(dirname "$(readlink -f "$0")")/.."
+MCPOMNI_SCRIPT="$STEVE_DIR/src/mcpomni-connect.py"
+
+# Display help information
+show_help() {
+  echo "Steve Model Manager - Utility for mcpomni-connect models"
+  echo ""
+  echo "Usage: steve-model [command] [options]"
+  echo ""
+  echo "Commands:"
+  echo "  list                 List configured models"
+  echo "  configure NAME       Configure a new model"
+  echo "  set-default NAME     Set default model"
+  echo "  info NAME            Show detailed information about a model"
+  echo ""
+  echo "Options:"
+  echo "  --help               Show this help message"
+  echo ""
+  echo "Examples:"
+  echo "  steve-model list"
+  echo "  steve-model configure anthropic-claude-opus"
+  echo "  steve-model set-default anthropic-claude-3-haiku"
+  echo ""
+}
+
+# Check if mcpomni-connect.py exists
+if [[ ! -f "$MCPOMNI_SCRIPT" ]]; then
+  echo "Error: mcpomni-connect.py not found at $MCPOMNI_SCRIPT"
+  exit 1
+fi
+
+# Check if Python is installed
+if ! command -v python3 &> /dev/null; then
+  echo "Error: Python 3 is required but not installed."
+  exit 1
+fi
+
+# Handle commands
+case "$1" in
+  list)
+    python3 "$MCPOMNI_SCRIPT" --list-models
+    ;;
+    
+  configure)
+    if [[ -z "$2" ]]; then
+      echo "Error: Model name is required for configure command"
+      echo "Usage: steve-model configure MODEL_NAME"
+      exit 1
+    fi
+    
+    python3 "$MCPOMNI_SCRIPT" --configure "$2"
+    ;;
+    
+  set-default)
+    if [[ -z "$2" ]]; then
+      echo "Error: Model name is required for set-default command"
+      echo "Usage: steve-model set-default MODEL_NAME"
+      exit 1
+    fi
+    
+    # Check if model exists
+    MODEL_CONFIG_FILE="$HOME/.steve/mcpomni-connect/models/$2.json"
+    if [[ ! -f "$MODEL_CONFIG_FILE" ]]; then
+      echo "Error: Model '$2' not found"
+      echo "Use 'steve-model list' to see available models"
+      exit 1
+    fi
+    
+    # Update main config
+    CONFIG_FILE="$HOME/.steve/mcpomni-connect/config.json"
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+      echo "Error: mcpomni-connect config file not found"
+      exit 1
+    fi
+    
+    # Use python to update the config
+    python3 -c "
+import json
+with open('$CONFIG_FILE', 'r') as f:
+    config = json.load(f)
+config['default_model'] = '$2'
+with open('$CONFIG_FILE', 'w') as f:
+    json.dump(config, f, indent=2)
+print(f\"Default model set to '$2'.\")
+"
+    ;;
+    
+  info)
+    if [[ -z "$2" ]]; then
+      echo "Error: Model name is required for info command"
+      echo "Usage: steve-model info MODEL_NAME"
+      exit 1
+    fi
+    
+    # Check if model exists
+    MODEL_CONFIG_FILE="$HOME/.steve/mcpomni-connect/models/$2.json"
+    if [[ ! -f "$MODEL_CONFIG_FILE" ]]; then
+      echo "Error: Model '$2' not found"
+      echo "Use 'steve-model list' to see available models"
+      exit 1
+    fi
+    
+    # Display model info
+    echo "Model Information: $2"
+    echo "---------------------"
+    cat "$MODEL_CONFIG_FILE" | python3 -m json.tool
+    ;;
+  
+  --help|help)
+    show_help
+    ;;
+    
+  *)
+    if [[ -z "$1" ]]; then
+      show_help
+    else
+      echo "Error: Unknown command '$1'"
+      echo "Use 'steve-model --help' for usage information"
+      exit 1
+    fi
+    ;;
+esac

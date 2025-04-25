@@ -15,6 +15,11 @@ const path = require('path');
 const fs = require('fs');
 const { Command } = require('commander');
 const { spawn, execSync } = require('child_process');
+const { 
+  executeMcpomni, 
+  checkMcpomniInstallation, 
+  listModels 
+} = require('./integration');
 
 // Configuration
 const HOME_DIR = process.env.HOME || process.env.USERPROFILE;
@@ -90,7 +95,7 @@ const loadPersona = (personaName) => {
 };
 
 // Function to load and execute routine
-const executeRoutine = (routineName, options) => {
+const executeRoutine = async (routineName, options) => {
   if (routineName === 'auto') {
     // Determine appropriate routine based on time of day
     const hour = new Date().getHours();
@@ -119,22 +124,31 @@ const executeRoutine = (routineName, options) => {
     const prompt = `Execute ${routineName} routine as ${options.persona}:\n\n${routine.prompt}`;
     
     // Run mcpomni-connect with routine prompt
-    // This part would integrate with mcpomni-connect API in the real implementation
+    // This part integrates with mcpomni-connect
     if (options.background) {
       // Run routine in background
       const processId = generateProcessId();
-      
-      // To be implemented: background processing logic
-      console.log(`Started ${routineName} routine in background with ID: ${processId}`);
+      await handleBackgroundMode(prompt, null, options);
     } else {
       // Run routine interactively
       console.log(`\nExecuting ${routineName} routine as ${options.persona}...`);
       
-      // This is a placeholder for actual mcpomni-connect execution
-      // In real implementation, we would call mcpomni-connect API here
-      console.log(`\n[Routine ${routineName}]`);
-      console.log(`Prompt: ${routine.prompt}`);
-      console.log(`\n[End of routine simulation]`);
+      try {
+        // Call mcpomni-connect with prompt
+        const response = await executeMcpomni(prompt, {
+          skipPermissions: true,
+          system: `You are ${options.persona}, executing the ${routineName} routine.`
+        });
+        
+        console.log(response);
+      } catch (error) {
+        console.error(`Error executing routine: ${error.message}`);
+        
+        // Fallback to simulation if mcpomni-connect fails
+        console.log(`\n[Routine ${routineName}]`);
+        console.log(`Prompt: ${routine.prompt}`);
+        console.log(`\n[End of routine simulation]`);
+      }
     }
     
     return true;
@@ -310,27 +324,37 @@ const handleProcessKill = (processId) => {
 };
 
 // Handle interactive mode (direct prompt)
-const handleInteractiveMode = (prompt, options) => {
+const handleInteractiveMode = async (prompt, options) => {
   // Load persona
   const persona = loadPersona(options.persona);
   
   console.log(`Using persona: ${persona.name}`);
   
-  // In a real implementation, we would call mcpomni-connect with the prompt
-  // and persona configuration
-  console.log('\nThis is a placeholder for mcpomni-connect integration.');
-  console.log(`Persona: ${persona.name} (${persona.role})`);
-  console.log(`Prompt: ${prompt}`);
-  
-  // This is where we would execute mcpomni-connect in a real implementation
-  // For now, we just simulate the response
-  console.log('\n[Steve Response Simulation]');
-  console.log(`Hello! I'm ${persona.name}, your ${persona.role}. How can I assist you today?`);
-  console.log('[End of simulation]');
+  try {
+    // Call mcpomni-connect with prompt
+    const response = await executeMcpomni(prompt, {
+      skipPermissions: true,
+      system: `You are ${persona.name}, ${persona.role}. Respond in the style of ${persona.communication?.style || 'professional'}.`
+    });
+    
+    console.log(response);
+  } catch (error) {
+    console.error(`Error from mcpomni-connect: ${error.message}`);
+    
+    // Fallback to simulation
+    console.log('\nFalling back to simulation mode...');
+    console.log('\nThis is a placeholder for mcpomni-connect integration.');
+    console.log(`Persona: ${persona.name} (${persona.role})`);
+    console.log(`Prompt: ${prompt}`);
+    
+    console.log('\n[Steve Response Simulation]');
+    console.log(`Hello! I'm ${persona.name}, your ${persona.role}. How can I assist you today?`);
+    console.log('[End of simulation]');
+  }
 };
 
 // Handle background mode
-const handleBackgroundMode = (text, outputFile, options) => {
+const handleBackgroundMode = async (text, outputFile, options) => {
   if (!text) {
     console.error('Error: --print is required with --background');
     process.exit(1);
@@ -355,8 +379,9 @@ const handleBackgroundMode = (text, outputFile, options) => {
   const processDir = path.join(config.background.processDir, processId);
   ensureDirExists(processDir);
   
-  // In a real implementation, we would call mcpomni-connect in a background process
-  // For now, we just simulate the process
+  // Create debug log file
+  const debugLogFile = path.join(processDir, 'debug.log');
+  const pidFile = path.join(processDir, 'pid');
   
   // Create status file
   const statusFile = path.join(processDir, 'status.json');
@@ -372,25 +397,101 @@ const handleBackgroundMode = (text, outputFile, options) => {
   };
   
   fs.writeFileSync(statusFile, JSON.stringify(status, null, 2));
+  fs.writeFileSync(debugLogFile, `Starting background process at ${status.startTime}\n`);
   
-  // Create output file with simulated response
+  // Create output directory if needed
   ensureDirExists(path.dirname(outputFile));
   
-  fs.writeFileSync(outputFile, 
-    `[Background Process Simulation]\n` +
-    `Hello! I'm ${persona.name}, your ${persona.role}.\n\n` +
-    `You asked: ${text}\n\n` +
-    `I would process this request in the background and provide a response here.\n` +
-    `[End of simulation]`
-  );
-  
-  // Update status to completed
-  status.state = 'COMPLETED';
-  status.endTime = new Date().toISOString();
-  fs.writeFileSync(statusFile, JSON.stringify(status, null, 2));
-  
-  console.log(`Process started and completed (ID: ${processId})`);
-  console.log(`Use 'steve --status ${processId}' to view results`);
+  try {
+    // Start mcpomni-connect in background
+    const mcpomniProcess = spawn('python3', [
+      path.join(__dirname, 'mcpomni-connect.py'),
+      '--print', text,
+      '--output', outputFile,
+      '--system', `You are ${persona.name}, ${persona.role}. Respond in the style of ${persona.communication?.style || 'professional'}.`,
+      '--dangerously-skip-permissions'
+    ], {
+      detached: true,
+      stdio: 'ignore'
+    });
+    
+    // Save PID
+    fs.writeFileSync(pidFile, mcpomniProcess.pid.toString());
+    fs.appendFileSync(debugLogFile, `Process started with PID: ${mcpomniProcess.pid}\n`);
+    
+    // Detach process
+    mcpomniProcess.unref();
+    
+    // Wait a bit for the process to start
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Update status to RUNNING
+    status.state = 'RUNNING';
+    status.pid = mcpomniProcess.pid;
+    fs.writeFileSync(statusFile, JSON.stringify(status, null, 2));
+    
+    // Set up a process checker to detect completion
+    const checkInterval = setInterval(() => {
+      try {
+        process.kill(mcpomniProcess.pid, 0);
+        // Process is still running
+      } catch (e) {
+        // Process has completed
+        clearInterval(checkInterval);
+        
+        // Update status
+        status.state = 'COMPLETED';
+        status.endTime = new Date().toISOString();
+        fs.writeFileSync(statusFile, JSON.stringify(status, null, 2));
+        fs.appendFileSync(debugLogFile, `Process completed at ${status.endTime}\n`);
+      }
+    }, 1000);
+    
+    // Don't keep the process waiting
+    checkInterval.unref();
+    
+    console.log(`Process started (ID: ${processId})`);
+    console.log(`Use 'steve --status ${processId}' to view results`);
+  } catch (error) {
+    console.error(`Error starting background process: ${error.message}`);
+    
+    // Fallback to simulation
+    console.log('Falling back to simulation...');
+    
+    // Create simulated output
+    fs.writeFileSync(outputFile, 
+      `[Background Process Simulation]\n` +
+      `Hello! I'm ${persona.name}, your ${persona.role}.\n\n` +
+      `You asked: ${text}\n\n` +
+      `I would process this request in the background and provide a response here.\n` +
+      `[End of simulation]`
+    );
+    
+    // Update status to completed
+    status.state = 'COMPLETED';
+    status.endTime = new Date().toISOString();
+    fs.writeFileSync(statusFile, JSON.stringify(status, null, 2));
+    fs.appendFileSync(debugLogFile, `Simulated process completed at ${status.endTime}\n`);
+    
+    console.log(`Process completed (ID: ${processId})`);
+    console.log(`Use 'steve --status ${processId}' to view results`);
+  }
+};
+
+// Check if mcpomni-connect is properly installed
+const checkInstallation = async () => {
+  try {
+    // Check if mcpomni-connect is installed
+    const installed = await checkMcpomniInstallation();
+    if (!installed) {
+      console.warn('\nWARNING: mcpomni-connect is not properly installed or configured.');
+      console.warn('Some functionality may be limited to simulation mode.');
+      console.warn('Use "steve-model" to configure mcpomni-connect models.\n');
+    }
+  } catch (error) {
+    console.warn('\nWARNING: Error checking mcpomni-connect installation:', error.message);
+    console.warn('Operating in simulation mode.\n');
+  }
 };
 
 // Define command line interface
@@ -407,12 +508,30 @@ program
   .option('-k, --kill <id>', 'Terminate a background process')
   .option('--list', 'List all background processes')
   .option('--persona <persona>', 'Use alternative persona', config.defaultPersona)
-  .option('--routine <routine>', 'Run a specific routine', config.defaultRoutine);
+  .option('--routine <routine>', 'Run a specific routine', config.defaultRoutine)
+  .option('--model <model>', 'Specify which model to use')
+  .option('--list-models', 'List available models');
 
 // Add a default action for processing arguments
 program.arguments('[prompt...]')
-  .action((promptArgs) => {
+  .action(async (promptArgs) => {
     const options = program.opts();
+    
+    // Check installation status
+    await checkInstallation();
+    
+    // Handle list-models command
+    if (options.listModels) {
+      try {
+        const models = await listModels();
+        if (models.length === 0) {
+          console.log('No models configured. Use steve-model to configure models.');
+        }
+      } catch (error) {
+        console.error(`Error listing models: ${error.message}`);
+      }
+      return;
+    }
     
     // Handle status command
     if (options.status !== undefined) {
@@ -440,25 +559,43 @@ program.arguments('[prompt...]')
     
     // Handle routine execution
     if (options.routine && options.routine !== DEFAULT_ROUTINE) {
-      executeRoutine(options.routine, options);
+      await executeRoutine(options.routine, options);
       return;
     }
     
     // Handle background mode
     if (options.background) {
-      handleBackgroundMode(options.print, options.outFile, options);
+      await handleBackgroundMode(options.print, options.outFile, options);
       return;
     }
     
     if (promptArgs && promptArgs.length > 0) {
       // Join all arguments into a single prompt
       const prompt = promptArgs.join(' ');
-      handleInteractiveMode(prompt, options);
+      await handleInteractiveMode(prompt, options);
     } else {
       // No arguments and no special options, show interactive mode message
       console.log('Starting Steve in interactive mode...');
       console.log('This is a placeholder for mcpomni-connect interactive mode.');
       console.log('In a real implementation, this would launch the mcpomni-connect CLI with Steve configuration.');
+      
+      // Launch interactive mode
+      try {
+        const pythonProcess = spawn('python3', [
+          path.join(__dirname, 'mcpomni-connect.py'),
+          '--dangerously-skip-permissions'
+        ], {
+          stdio: 'inherit'
+        });
+        
+        pythonProcess.on('close', (code) => {
+          if (code !== 0) {
+            console.error(`mcpomni-connect exited with code ${code}`);
+          }
+        });
+      } catch (error) {
+        console.error(`Error launching interactive mode: ${error.message}`);
+      }
     }
   });
 
