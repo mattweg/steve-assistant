@@ -1,0 +1,5 @@
+{
+  "name": "Evening Routine",
+  "description": "Wrap up your day and prepare for tomorrow",
+  "prompt": "1. Summarize task completions for today\n2. Preview tomorrow's calendar\n3. Suggest priorities for tomorrow\n4. Identify any follow-ups needed\n5. Check for any outstanding messages"
+}

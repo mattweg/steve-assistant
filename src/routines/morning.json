@@ -1,0 +1,5 @@
+{
+  "name": "Morning Routine",
+  "description": "Start your day organized and informed",
+  "prompt": "1. Check and summarize my calendar for today\n2. List any new important emails\n3. Remind me of today's priorities\n4. Check the weather forecast\n5. Suggest a focus for the day"
+}

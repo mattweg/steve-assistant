@@ -1,0 +1,46 @@
+{
+  "name": "steve-cli",
+  "version": "0.1.0",
+  "description": "Steve CLI - Personal Assistant powered by mcpomni-connect",
+  "main": "bin/steve-cli.js",
+  "bin": {
+    "steve": "bin/steve"
+  },
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "jest",
+    "install": "node scripts/install.js",
+    "preinstall": "node scripts/uninstall.js",
+    "uninstall": "node scripts/uninstall.js"
+  },
+  "keywords": [
+    "steve",
+    "personal-assistant",
+    "cli",
+    "omni",
+    "mcpomni-connect",
+    "ai"
+  ],
+  "author": "Steve (AI Intern)",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^13.1.0",
+    "chalk": "^4.1.2",
+    "node-fetch": "^2.6.7",
+    "ora": "^5.4.1",
+    "conf": "^10.2.0",
+    "boxen": "^7.1.0",
+    "aws-sdk": "^2.1400.0",
+    "mcpomni-connect": "^0.1.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "eslint": "^8.47.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

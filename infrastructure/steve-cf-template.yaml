@@ -1,0 +1,264 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Steve Personal Assistant - CloudFormation Deployment Template'
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t4g.medium
+    AllowedValues:
+      - t4g.small
+      - t4g.medium
+      - t4g.large
+    Description: EC2 instance type for Steve
+  
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+  
+  SSHLocation:
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 0.0.0.0/0
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x
+    Description: The IP address range that can SSH to the EC2 instance
+
+  UserEmail:
+    Type: String
+    Description: Email address for the user (used for configuration and notifications)
+    AllowedPattern: ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$
+    ConstraintDescription: Must be a valid email address
+
+Resources:
+  SteveSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHLocation
+
+  SteveRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Path: /
+
+  SteveInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref SteveRole
+
+  SteveS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub steve-data-${AWS::AccountId}
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  SteveS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SteveS3Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt SteveRole.Arn
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:ListBucket
+            Resource:
+              - !Sub arn:aws:s3:::${SteveS3Bucket}
+              - !Sub arn:aws:s3:::${SteveS3Bucket}/*
+
+  SteveEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      SecurityGroups:
+        - !Ref SteveSecurityGroup
+      KeyName: !Ref KeyName
+      IamInstanceProfile: !Ref SteveInstanceProfile
+      ImageId: ami-0123456789abcdef # Replace with actual Amazon Linux 2023 AMI ID for your region
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: 20
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          
+          # Update system packages
+          yum update -y
+          
+          # Install required packages
+          yum install -y git nodejs npm python3 python3-pip jq
+
+          # Create user directories
+          mkdir -p /home/ec2-user/.steve
+          mkdir -p /home/ec2-user/.steve/bin
+          mkdir -p /home/ec2-user/.steve/config
+          mkdir -p /home/ec2-user/.steve/personas
+          mkdir -p /home/ec2-user/.steve/routines
+          mkdir -p /home/ec2-user/.steve/mcps
+          mkdir -p /home/ec2-user/.steve/background/processes
+          
+          # Install mcpomni-connect (this is a placeholder since it's conceptual)
+          npm install -g mcpomni-connect
+          
+          # Clone Steve repository (placeholder - would be actual repo)
+          cd /opt
+          git clone https://github.com/username/steve.git
+          
+          # Install Steve CLI
+          cd /opt/steve
+          npm install -g .
+          
+          # Configure Steve
+          cat > /home/ec2-user/.steve/config/config.json << 'EOF'
+          {
+            "version": "1.0.0",
+            "user": {
+              "email": "${UserEmail}"
+            },
+            "defaultPersona": "steve",
+            "defaultRoutine": "auto",
+            "s3": {
+              "bucket": "${SteveS3Bucket}",
+              "prefix": "steve-data/"
+            },
+            "mcpConfig": {
+              "path": "/home/ec2-user/.steve/mcps"
+            },
+            "background": {
+              "processDir": "/home/ec2-user/.steve/background/processes"
+            }
+          }
+          EOF
+          
+          # Create default persona
+          cat > /home/ec2-user/.steve/personas/steve.json << 'EOF'
+          {
+            "name": "Steve",
+            "role": "Head Intern and Personal Assistant",
+            "communication": {
+              "style": "Professional but approachable",
+              "tone": "Helpful and efficient",
+              "signature": "Steve (Your AI Intern)"
+            },
+            "skills": [
+              "Task management",
+              "Scheduling",
+              "Information retrieval",
+              "Document processing"
+            ]
+          }
+          EOF
+          
+          # Create startup script
+          cat > /home/ec2-user/.steve/bin/steve-startup.sh << 'EOF'
+          #!/bin/bash
+          
+          # Steve Auto-Startup Script
+          # This script is sourced by .bashrc to provide Steve functionality
+          
+          # Function to start Steve
+          steve_start() {
+            steve "$@"
+          }
+          
+          # Aliases for convenience
+          alias steve-routine="steve --routine"
+          alias steve-morning="steve --routine=morning"
+          alias steve-evening="steve --routine=evening"
+          alias steve-work="steve --routine=work"
+          
+          # Display welcome message
+          echo ""
+          echo "┌────────────────────────────────────────┐"
+          echo "│                                        │"
+          echo "│   Steve Personal Assistant             │"
+          echo "│   Your AI Intern is ready to help.     │"
+          echo "│                                        │"
+          echo "│   Type 'steve' to begin, or            │"
+          echo "│   'steve --help' for options.          │"
+          echo "│                                        │"
+          echo "└────────────────────────────────────────┘"
+          echo ""
+          EOF
+          
+          chmod +x /home/ec2-user/.steve/bin/steve-startup.sh
+          
+          # Add to .bashrc for auto-startup
+          echo -e "\n# Steve Auto-Startup\nif [ -f \$HOME/.steve/bin/steve-startup.sh ]; then\n  source \$HOME/.steve/bin/steve-startup.sh\nfi" >> /home/ec2-user/.bashrc
+          
+          # Set permissions
+          chown -R ec2-user:ec2-user /home/ec2-user/.steve
+          chown -R ec2-user:ec2-user /opt/steve
+          
+          # Set up sync with S3 bucket
+          cat > /home/ec2-user/.steve/bin/sync-s3.sh << 'EOF'
+          #!/bin/bash
+          
+          # Sync Steve data with S3 bucket
+          aws s3 sync /home/ec2-user/.steve s3://${SteveS3Bucket}/steve-data/ --exclude "background/processes/*"
+          EOF
+          
+          chmod +x /home/ec2-user/.steve/bin/sync-s3.sh
+          
+          # Add to crontab for regular backup
+          (crontab -l 2>/dev/null; echo "0 * * * * /home/ec2-user/.steve/bin/sync-s3.sh") | crontab -
+          
+          # Signal completion
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource SteveEC2Instance --region ${AWS::Region}
+      
+      Tags:
+        - Key: Name
+          Value: Steve-Personal-Assistant
+
+Outputs:
+  InstanceId:
+    Description: The ID of the EC2 instance
+    Value: !Ref SteveEC2Instance
+  
+  PublicIP:
+    Description: The public IP address of the EC2 instance
+    Value: !GetAtt SteveEC2Instance.PublicIp
+  
+  PublicDnsName:
+    Description: The public DNS name of the EC2 instance
+    Value: !GetAtt SteveEC2Instance.PublicDnsName
+  
+  S3BucketName:
+    Description: The name of the S3 bucket used for Steve data
+    Value: !Ref SteveS3Bucket
+  
+  SSHCommand:
+    Description: Command to SSH into the instance
+    Value: !Sub ssh -i ${KeyName}.pem ec2-user@${SteveEC2Instance.PublicDnsName}
+  
+  SetupInstructions:
+    Description: Next steps after connecting to the instance
+    Value: "After connecting via SSH, run 'source ~/.bashrc' to initialize Steve."

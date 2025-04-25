@@ -1,0 +1,5 @@
+{
+  "name": "Work Routine",
+  "description": "Focus on work tasks and productivity",
+  "prompt": "1. List my top three work priorities for today\n2. Check for any urgent emails or messages\n3. Review upcoming meetings and deadlines\n4. Create a focused work plan\n5. Suggest potential blockers to address"
+}
