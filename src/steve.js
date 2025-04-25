@@ -13,7 +13,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { program } = require('commander');
+const { Command } = require('commander');
 const { spawn, execSync } = require('child_process');
 
 // Configuration
@@ -58,40 +58,20 @@ if (fs.existsSync(CONFIG_FILE)) {
   }
 }
 
-// Define command line interface
-program
-  .name('steve')
-  .description('Steve - Personal Assistant powered by mcpomni-connect')
-  .version(config.version)
-  .option('-b, --background', 'Run in background mode')
-  .option('-p, --print <text>', 'Process text input (for background mode)')
-  .option('-o, --out-file <file>', 'Output file for background mode')
-  .option('-s, --status [id]', 'Show status of background processes')
-  .option('-l, --logs <id>', 'View logs for a background process')
-  .option('-k, --kill <id>', 'Terminate a background process')
-  .option('--list', 'List all background processes')
-  .option('--persona <persona>', 'Use alternative persona', config.defaultPersona)
-  .option('--routine <routine>', 'Run a specific routine', config.defaultRoutine)
-  .option('--mcp <mcp>', 'Use specific MCP');
-
-// Parse arguments
-program.parse(process.argv);
-const options = program.opts();
-
-// Generate a unique process ID
-const generateProcessId = () => {
-  const timestamp = Date.now();
-  const randomStr = Math.random().toString(36).substring(2, 10);
-  return `${timestamp}-${randomStr}`;
-};
-
 // Function to load persona
 const loadPersona = (personaName) => {
   const personaFile = path.join(STEVE_DIR, 'personas', `${personaName}.json`);
   
   if (!fs.existsSync(personaFile)) {
     console.error(`Persona "${personaName}" not found. Using default persona.`);
-    return loadPersona(DEFAULT_PERSONA);
+    return {
+      name: 'Steve',
+      role: 'Head Intern',
+      communication: {
+        style: 'Professional',
+        signature: 'Steve (AI Intern)',
+      },
+    };
   }
   
   try {
@@ -110,7 +90,7 @@ const loadPersona = (personaName) => {
 };
 
 // Function to load and execute routine
-const executeRoutine = (routineName) => {
+const executeRoutine = (routineName, options) => {
   if (routineName === 'auto') {
     // Determine appropriate routine based on time of day
     const hour = new Date().getHours();
@@ -127,8 +107,8 @@ const executeRoutine = (routineName) => {
   const routineFile = path.join(STEVE_DIR, 'routines', `${routineName}.json`);
   
   if (!fs.existsSync(routineFile)) {
-    console.error(`Routine "${routineName}" not found. Using default routine.`);
-    return executeRoutine('default');
+    console.error(`Routine "${routineName}" not found.`);
+    return false;
   }
   
   try {
@@ -162,6 +142,13 @@ const executeRoutine = (routineName) => {
     console.error(`Error executing routine: ${error.message}`);
     return false;
   }
+};
+
+// Generate a unique process ID
+const generateProcessId = () => {
+  const timestamp = Date.now();
+  const randomStr = Math.random().toString(36).substring(2, 10);
+  return `${timestamp}-${randomStr}`;
 };
 
 // Handle background process status
@@ -323,7 +310,7 @@ const handleProcessKill = (processId) => {
 };
 
 // Handle interactive mode (direct prompt)
-const handleInteractiveMode = (prompt) => {
+const handleInteractiveMode = (prompt, options) => {
   // Load persona
   const persona = loadPersona(options.persona);
   
@@ -343,7 +330,7 @@ const handleInteractiveMode = (prompt) => {
 };
 
 // Handle background mode
-const handleBackgroundMode = (text, outputFile) => {
+const handleBackgroundMode = (text, outputFile, options) => {
   if (!text) {
     console.error('Error: --print is required with --background');
     process.exit(1);
@@ -406,58 +393,74 @@ const handleBackgroundMode = (text, outputFile) => {
   console.log(`Use 'steve --status ${processId}' to view results`);
 };
 
-// Main logic
-const main = () => {
-  // Handle status command
-  if (options.status !== undefined) {
-    handleProcessStatus(options.status);
-    return;
-  }
-  
-  // Handle logs command
-  if (options.logs) {
-    handleProcessLogs(options.logs);
-    return;
-  }
-  
-  // Handle kill command
-  if (options.kill) {
-    handleProcessKill(options.kill);
-    return;
-  }
-  
-  // Handle list command
-  if (options.list) {
-    handleProcessStatus();
-    return;
-  }
-  
-  // Handle routine execution
-  if (options.routine && options.routine !== DEFAULT_ROUTINE) {
-    executeRoutine(options.routine);
-    return;
-  }
-  
-  // Handle background mode
-  if (options.background) {
-    handleBackgroundMode(options.print, options.outFile);
-    return;
-  }
-  
-  // Handle interactive mode with prompt
-  const args = program.args;
-  
-  if (args.length > 0) {
-    const prompt = args.join(' ');
-    handleInteractiveMode(prompt);
-    return;
-  }
-  
-  // No arguments provided, run default interactive mode
-  console.log('Starting Steve in interactive mode...');
-  console.log('This is a placeholder for mcpomni-connect interactive mode.');
-  console.log('In a real implementation, this would launch the mcpomni-connect CLI with Steve configuration.');
-};
+// Define command line interface
+const program = new Command();
+program
+  .name('steve')
+  .description('Steve - Personal Assistant powered by mcpomni-connect')
+  .version(config.version)
+  .option('-b, --background', 'Run in background mode')
+  .option('-p, --print <text>', 'Process text input (for background mode)')
+  .option('-o, --out-file <file>', 'Output file for background mode')
+  .option('-s, --status [id]', 'Show status of background processes')
+  .option('-l, --logs <id>', 'View logs for a background process')
+  .option('-k, --kill <id>', 'Terminate a background process')
+  .option('--list', 'List all background processes')
+  .option('--persona <persona>', 'Use alternative persona', config.defaultPersona)
+  .option('--routine <routine>', 'Run a specific routine', config.defaultRoutine);
 
-// Run main function
-main();
+// Add a default action for processing arguments
+program.arguments('[prompt...]')
+  .action((promptArgs) => {
+    const options = program.opts();
+    
+    // Handle status command
+    if (options.status !== undefined) {
+      handleProcessStatus(options.status);
+      return;
+    }
+    
+    // Handle logs command
+    if (options.logs) {
+      handleProcessLogs(options.logs);
+      return;
+    }
+    
+    // Handle kill command
+    if (options.kill) {
+      handleProcessKill(options.kill);
+      return;
+    }
+    
+    // Handle list command
+    if (options.list) {
+      handleProcessStatus();
+      return;
+    }
+    
+    // Handle routine execution
+    if (options.routine && options.routine !== DEFAULT_ROUTINE) {
+      executeRoutine(options.routine, options);
+      return;
+    }
+    
+    // Handle background mode
+    if (options.background) {
+      handleBackgroundMode(options.print, options.outFile, options);
+      return;
+    }
+    
+    if (promptArgs && promptArgs.length > 0) {
+      // Join all arguments into a single prompt
+      const prompt = promptArgs.join(' ');
+      handleInteractiveMode(prompt, options);
+    } else {
+      // No arguments and no special options, show interactive mode message
+      console.log('Starting Steve in interactive mode...');
+      console.log('This is a placeholder for mcpomni-connect interactive mode.');
+      console.log('In a real implementation, this would launch the mcpomni-connect CLI with Steve configuration.');
+    }
+  });
+
+// Parse arguments
+program.parse(process.argv);
